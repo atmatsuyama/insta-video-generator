@@ -1,0 +1,8 @@
+streamlit
+google-generativeai
+pandas
+moviepy
+edge-tts
+google-auth
+google-auth-oauthlib
+google-api-python-client
