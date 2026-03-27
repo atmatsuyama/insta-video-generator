@@ -1,45 +1,32 @@
 import streamlit as st
-import pandas as pd
-from storage import add_material_to_sheet
-from brain import generate_video_scenario
-from editor import create_video
+from storage import upload_to_drive, add_material_to_sheet
 
-# 基本設定
-st.set_page_config(page_title="インスタ動画生成", layout="centered")
+st.set_page_config(page_title="素材ポイポイくん", layout="centered")
 st.title("📸 素材ポイポイくん")
 
-# ユーザー識別
-email = st.sidebar.text_input("あなたのGmail", placeholder="example@gmail.com")
+# 設定情報（これらはAさん・Bさんごとに本来は入力してもらうもの）
+# テスト用にあなたのIDをここに入れておくと楽です
+SHEET_ID = st.sidebar.text_input("スプレッドシートID")
+FOLDER_ID = st.sidebar.text_input("保存先フォルダID")
 
-if not email:
-    st.info("左上のメニュー（＞マーク）からGmailを入力してください")
-else:
-    tab1, tab2 = st.tabs(["📤 素材を登録", "🎬 動画を作る"])
+tab1, tab2 = st.tabs(["📤 素材を登録", "🎬 動画を作る"])
 
-    with tab1:
-        st.header("スマホから素材をアップ")
-        # フォームにせず、直接配置することで「ボタンがない」を防ぎます
-        uploaded_file = st.file_uploader("写真や動画を選択", type=["mp4", "mov", "jpg", "png"])
-        asset_name = st.text_input("これになまえを付ける（必須）", placeholder="例：サクサクのパイ")
-        asset_desc = st.text_area("ひとことメモ（任意）", placeholder="例：断面がきれいなやつ")
+with tab1:
+    uploaded_file = st.file_uploader("写真や動画を選択", type=["mp4", "mov", "jpg", "png"])
+    asset_name = st.text_input("素材のなまえ")
+    asset_desc = st.text_area("メモ")
 
-        # ここが「アップするボタン」です
-        if st.button("✨ この素材をプールに保存"):
-            if uploaded_file and asset_name:
-                with st.spinner("保存中..."):
-                    # ※現在は見た目だけ動かしています。次にGoogleドライブ保存を繋ぎます。
-                    st.success(f"OK！「{asset_name}」をあなたの専用シートに記録しました！")
+    if st.button("✨ この素材をプールに保存"):
+        if uploaded_file and asset_name and SHEET_ID and FOLDER_ID:
+            with st.spinner("Googleドライブへ転送中..."):
+                try:
+                    # 1. ドライブにアップロード
+                    file_url = upload_to_drive(uploaded_file, FOLDER_ID)
+                    # 2. シートに追記
+                    add_material_to_sheet(SHEET_ID, asset_name, file_url, asset_desc)
+                    st.success(f"成功！「{asset_name}」を保存しました！")
                     st.balloons()
-            else:
-                st.warning("「ファイル選択」と「なまえ」の両方が必要だよ！")
-
-    with tab2:
-        st.header("動画を生成")
-        user_input = st.text_input("きょうの動画のテーマは？", placeholder="例：新発売をアピールしたい")
-        
-        if st.button("🤖 AIに構成をまかせる"):
-            if user_input:
-                st.info("AIがあなたのシートを見て構成を考えています...")
-                # 以降、brain.pyを呼び出す処理（前回同様）
-            else:
-                st.error("テーマを入力してね")
+                except Exception as e:
+                    st.error(f"エラーが発生しました: {e}")
+        else:
+            st.warning("ファイル、なまえ、各IDをすべて入力してください。")
