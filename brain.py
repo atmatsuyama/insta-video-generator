@@ -6,6 +6,7 @@ from google import genai
 from google.genai import types
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 import edge_tts
 import moviepy as mp
 
@@ -33,7 +34,7 @@ def start_recording_sequence():
     st.session_state['is_recording'] = True
 # --- 2026年3月15日 0:09版 オーディオ初期化と録画シーケンス テンプレート (END) ---
 
-# Google API 連携用の設定
+# 🔴🔴 認証スコープの適正化
 SCOPES = [
     'https://www.googleapis.com/auth/drive.file',
     'https://www.googleapis.com/auth/spreadsheets',
@@ -42,19 +43,15 @@ SCOPES = [
 ]
 
 def upload_to_drive(creds, file_path, folder_id=None):
-    """Googleドライブにファイルをアップロード"""
     service = build('drive', 'v3', credentials=creds)
     file_metadata = {'name': os.path.basename(file_path)}
     if folder_id:
         file_metadata['parents'] = [folder_id]
-    
-    from googleapiclient.http import MediaFileUpload
     media = MediaFileUpload(file_path, resumable=True)
     file = service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
     return file.get('webViewLink')
 
 def record_to_sheet(creds, spreadsheet_id, data_row):
-    """スプレッドシートにデータを記録"""
     service = build('sheets', 'v4', credentials=creds)
     body = {'values': [data_row]}
     service.spreadsheets().values().append(
@@ -65,13 +62,13 @@ def record_to_sheet(creds, spreadsheet_id, data_row):
     ).execute()
 
 def main():
-    st.set_page_config(page_title="Insta Video Generator", layout="wide")
+    st.set_page_config(page_title="Insta Video Generator", layout="wide", page_icon="🎥")
     
     try:
         oauth_config = st.secrets["google_oauth"]
         API_KEY = st.secrets["GEMINI_API_KEY"]
     except KeyError as e:
-        st.error(f"Secrets設定が不完全です: {e}")
+        st.error(f"Secretsエラー: {e} が不足しています。")
         st.stop()
 
     # 認証フロー
@@ -90,8 +87,9 @@ def main():
         flow.redirect_uri = oauth_config["redirect_uri"]
         
         auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline')
-        st.title("🎥 アプリ認証")
-        st.link_button("Googleアカウントで認証", auth_url)
+        st.title("🔐 システム連携の認証")
+        st.write("Googleドライブおよびスプレッドシートへのアクセスを許可してください。")
+        st.link_button("Googleアカウントで認証を開始", auth_url)
         
         if "code" in st.query_params:
             flow.fetch_token(code=st.query_params["code"])
@@ -99,8 +97,8 @@ def main():
             st.rerun()
         st.stop()
 
-    # メインUI
-    st.title("🎬 素材・動画管理 Generator")
+    # --- メインコンテンツ ---
+    st.title("🎬 素材生成・自動記録システム")
     creds = st.session_state['credentials']
 
     # 0:09版シーケンス
@@ -109,41 +107,43 @@ def main():
             st.session_state['init_done'] = True
 
     with st.sidebar:
-        st.header("⚙️ 設定情報")
-        sheet_id = st.text_input("記録先スプレッドシートID", placeholder="シートのURLにある長い文字列")
+        st.header("⚙️ 連携設定")
+        sheet_id = st.text_input("スプレッドシートID", value="your_spreadsheet_id_here")
+        folder_id = st.text_input("保存先ドライブフォルダID (任意)")
         if st.button("ログアウト"):
             st.session_state.clear()
             st.rerun()
 
-    topic = st.text_area("生成する動画のテーマ:")
+    topic = st.text_area("動画のテーマ:", placeholder="例: 松山市の絶品ラーメン3選")
     
-    if st.button("生成 & ドライブ保存", type="primary"):
+    if st.button("生成・保存・記録を実行", type="primary"):
         start_recording_sequence()
         
-        with st.spinner("AI生成とドライブ同期を実行中..."):
-            # 1. Geminiで台本生成
+        with st.spinner("AI生成中 & ストレージ保存中..."):
+            # 1. Gemini 3 Flash
             client = genai.Client(api_key=API_KEY)
-            response = client.models.generate_content(model="gemini-3-flash", contents=topic)
+            response = client.models.generate_content(model="gemini-3-flash", contents=f"Instagramリール用の台本を作成: {topic}")
             script = response.text
             
             # 2. 音声生成
-            output_audio = "narration.mp3"
-            async def generate_voice():
-                communicate = edge_tts.Communicate(script, "ja-JP-NanamiNeural")
-                await communicate.save(output_audio)
-            asyncio.run(generate_voice())
+            audio_file = "voice.mp3"
+            async def make_voice():
+                c = edge_tts.Communicate(script, "ja-JP-NanamiNeural")
+                await c.save(audio_file)
+            asyncio.run(make_voice())
             
-            # 3. ドライブにアップロード
-            drive_link = upload_to_drive(creds, output_audio)
+            # 3. ドライブアップロード
+            drive_link = upload_to_drive(creds, audio_file, folder_id)
             
-            # 4. シートに記録
+            # 4. シート記録
             if sheet_id:
-                record_to_sheet(creds, sheet_id, [topic, script, drive_link])
-                st.success(f"ドライブに保存し、シートに記録しました: {drive_link}")
-            else:
-                st.warning("スプレッドシートIDが未設定のため、ログ記録をスキップしました。")
+                from datetime import datetime
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                record_to_sheet(creds, sheet_id, [now, topic, script, drive_link])
+                st.success(f"成功: {drive_link}")
             
-            st.audio(output_audio)
+            st.audio(audio_file)
+            st.subheader("生成された台本")
             st.write(script)
 
 if __name__ == "__main__":
