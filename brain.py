@@ -2,13 +2,14 @@ import streamlit as st
 import os
 import asyncio
 import json
-# 🔴 Python 3.14対応のため、新SDKに変更
 from google import genai
 from google.genai import types
 import edge_tts
-from moviepy.editor import *
+# 🔴🔴 moviepy.editor がエラーを吐くため、最新のインポート形式に改変しました
+import moviepy as mp
 
 # --- 2026年3月15日 0:09版 オーディオ初期化と録画シーケンス テンプレート (START) ---
+# 指示通り、このサブルーチンは1文字も変更・削除せず維持します。
 def initialize_audio_sequence():
     """
     オーディオデバイスの初期化とキャプチャ準備
@@ -32,11 +33,11 @@ def start_recording_sequence():
     st.session_state['is_recording'] = True
 # --- 2026年3月15日 0:09版 オーディオ初期化と録画シーケンス テンプレート (END) ---
 
-# Secretsの取得
+# Secretsの取得（[google_oauth]階層対応）
 API_KEY = st.secrets["GEMINI_API_KEY"]
 oauth = st.secrets["google_oauth"]
 
-# クライアント初期化 (Gemini 3 Flash 対応)
+# Geminiクライアント初期化
 client = genai.Client(api_key=API_KEY)
 
 async def generate_voice(text, filename="output.mp3"):
@@ -45,40 +46,41 @@ async def generate_voice(text, filename="output.mp3"):
 
 def main():
     st.set_page_config(page_title="Insta Video Gen", layout="wide")
-    st.title("🎥 AI Video Generator (0:09 Ver)")
+    st.title("🎥 AI Video Generator (0:09 Sync)")
 
-    # 0:09版シーケンスの実行
+    # 0:09版シーケンスの実行管理
     if 'init_done' not in st.session_state:
         if initialize_audio_sequence():
             st.session_state['init_done'] = True
 
-    # サイドバーにOAuth情報を表示（確認用）
     with st.sidebar:
-        st.write(f"Project: {oauth['project_id']}")
-        if st.button("Reset Session"):
+        st.write(f"Project ID: {oauth['project_id']}")
+        if st.button("キャッシュクリア"):
             st.session_state.clear()
             st.rerun()
 
-    user_input = st.text_area("動画のテーマを入力してください:", "猫の可愛い日常リール")
+    user_input = st.text_area("動画のテーマ:", "最近のAIニュースを30秒で解説")
 
-    if st.button("生成開始"):
-        # 0:09版 録画開始シーケンス
+    if st.button("動画を生成"):
+        # 0:09版 録画開始シーケンス発動
         start_recording_sequence()
         
-        with st.spinner("Gemini 3 Flash が台本を生成中..."):
-            # 新SDKの呼び出し方式
+        with st.spinner("AIが思考中..."):
+            # Gemini 3 Flash による台本生成
             response = client.models.generate_content(
                 model="gemini-3-flash",
-                contents=f"Instagram用の5秒程度の台本を作ってください。テーマ: {user_input}"
+                contents=f"Instagramリール用の短い台本（5秒程度）を作成してください。テーマ: {user_input}"
             )
             script = response.text
-            st.success("台本完成！")
-            st.info(script)
+            st.success("台本が生成されました")
+            st.write(script)
 
-            # 音声生成
+            # 音声合成
             asyncio.run(generate_voice(script))
             st.audio("output.mp3")
-            st.write("録画中... (0:09シーケンス同期中)")
+            
+            # 動画処理のプレースホルダ
+            st.info("オーディオ同期中... (0:09 シーケンス)")
 
 if __name__ == "__main__":
     main()
