@@ -7,12 +7,22 @@ from googleapiclient.http import MediaIoBaseUpload
 import io
 
 def get_gcp_service():
-    """SecretsのGCP_JSONから認証情報を作成"""
-    # '''で囲んで貼ったので、文字列として読み込んでJSONに戻す
-    info = json.loads(st.secrets["GCP_JSON"])
+    """Secretsから分割された認証情報を読み込み、一つの辞書にまとめる"""
+    # 1. [gcp_service_account] の中身を取得
+    info = dict(st.secrets["gcp_service_account"])
+    
+    # 2. その他のバラバラに貼った項目を合流させる
+    info["client_email"] = st.secrets["client_email"]
+    info["client_id"] = st.secrets["client_id"]
+    info["auth_uri"] = st.secrets["auth_uri"]
+    info["token_uri"] = st.secrets["token_uri"]
+    info["auth_provider_x509_cert_url"] = st.secrets["auth_provider_x509_cert_url"]
+    info["client_x509_cert_url"] = st.secrets["client_x509_cert_url"]
+    info["universe_domain"] = st.secrets["universe_domain"]
+
+    # 3. 辞書形式になった情報をGoogleの認証ライブラリに渡す
     creds = service_account.Credentials.from_service_account_info(info)
     
-    # ドライブとシートのサービスを起動
     drive_service = build('drive', 'v3', credentials=creds)
     sheets_service = build('sheets', 'v4', credentials=creds)
     return drive_service, sheets_service
@@ -26,7 +36,6 @@ def upload_to_drive(uploaded_file, folder_id):
         'parents': [folder_id]
     }
     
-    # Streamlitのアップローダーからバイナリデータを読み込む
     media = MediaIoBaseUpload(io.BytesIO(uploaded_file.getvalue()), 
                               mimetype=uploaded_file.type, 
                               resumable=True)
@@ -35,7 +44,7 @@ def upload_to_drive(uploaded_file, folder_id):
                                         media_body=media,
                                         fields='id, webViewLink').execute()
     
-    # 誰でも閲覧できるように権限を変更（動画生成に必要）
+    # 誰でも閲覧できるように権限を変更
     drive_service.permissions().create(fileId=file.get('id'), 
                                         body={'type': 'anyone', 'role': 'reader'}).execute()
     
