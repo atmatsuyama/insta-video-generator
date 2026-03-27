@@ -2,14 +2,14 @@ import streamlit as st
 import os
 import asyncio
 import json
-from google import genai
+# 🔴🔴 インポートエラー回避のため形式を変更
+import google.genai as genai
 from google.genai import types
 import edge_tts
-# 🔴🔴 moviepy.editor がエラーを吐くため、最新のインポート形式に改変しました
+# 🔴🔴 moviepy.editor は 2.x系で廃止されたため改変
 import moviepy as mp
 
 # --- 2026年3月15日 0:09版 オーディオ初期化と録画シーケンス テンプレート (START) ---
-# 指示通り、このサブルーチンは1文字も変更・削除せず維持します。
 def initialize_audio_sequence():
     """
     オーディオデバイスの初期化とキャプチャ準備
@@ -33,54 +33,50 @@ def start_recording_sequence():
     st.session_state['is_recording'] = True
 # --- 2026年3月15日 0:09版 オーディオ初期化と録画シーケンス テンプレート (END) ---
 
-# Secretsの取得（[google_oauth]階層対応）
-API_KEY = st.secrets["GEMINI_API_KEY"]
-oauth = st.secrets["google_oauth"]
-
-# Geminiクライアント初期化
-client = genai.Client(api_key=API_KEY)
-
-async def generate_voice(text, filename="output.mp3"):
-    communicate = edge_tts.Communicate(text, "ja-JP-NanamiNeural")
-    await communicate.save(filename)
-
 def main():
     st.set_page_config(page_title="Insta Video Gen", layout="wide")
-    st.title("🎥 AI Video Generator (0:09 Sync)")
+    st.title("🎥 AI Video Generator")
 
-    # 0:09版シーケンスの実行管理
+    # Secretsの安全な取得
+    try:
+        API_KEY = st.secrets["GEMINI_API_KEY"]
+        oauth = st.secrets["google_oauth"]
+    except KeyError as e:
+        st.error(f"Secrets設定エラー: {e} が見つかりません。Streamlit CloudのSettings > Secrets を確認してください。")
+        st.stop()
+
+    # Geminiクライアント初期化
+    client = genai.Client(api_key=API_KEY)
+
+    # 0:09版シーケンス
     if 'init_done' not in st.session_state:
         if initialize_audio_sequence():
             st.session_state['init_done'] = True
 
-    with st.sidebar:
-        st.write(f"Project ID: {oauth['project_id']}")
-        if st.button("キャッシュクリア"):
-            st.session_state.clear()
-            st.rerun()
+    user_input = st.text_area("動画のテーマ:", "最新のガジェット紹介")
 
-    user_input = st.text_area("動画のテーマ:", "最近のAIニュースを30秒で解説")
-
-    if st.button("動画を生成"):
-        # 0:09版 録画開始シーケンス発動
+    if st.button("生成開始"):
+        # 0:09版 録画開始シーケンス
         start_recording_sequence()
         
-        with st.spinner("AIが思考中..."):
-            # Gemini 3 Flash による台本生成
+        with st.spinner("AIが処理中..."):
+            # Gemini 3 Flash 呼び出し
             response = client.models.generate_content(
                 model="gemini-3-flash",
-                contents=f"Instagramリール用の短い台本（5秒程度）を作成してください。テーマ: {user_input}"
+                contents=f"Instagramリール用の台本を作ってください: {user_input}"
             )
             script = response.text
-            st.success("台本が生成されました")
+            st.success("台本完成")
             st.write(script)
 
             # 音声合成
+            async def generate_voice(text):
+                communicate = edge_tts.Communicate(text, "ja-JP-NanamiNeural")
+                await communicate.save("output.mp3")
+            
             asyncio.run(generate_voice(script))
             st.audio("output.mp3")
-            
-            # 動画処理のプレースホルダ
-            st.info("オーディオ同期中... (0:09 シーケンス)")
+            st.info("オーディオ同期中... (0:09仕様)")
 
 if __name__ == "__main__":
     main()
