@@ -1,6 +1,6 @@
-streamlit
+streamlit==1.55.0
 google-genai
 edge-tts
-moviepy
+moviepy>=2.0.0
 numpy
 pillow
